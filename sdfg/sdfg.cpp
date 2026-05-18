@@ -24,6 +24,24 @@ float yaw = -90.0f;
 float pitch = 0.0f;
 float fov = 45.0f;
 
+// ========== ПЕРЕМЕННЫЕ ДЛЯ ДВИЖЕНИЯ ЧАСТЕЙ СТАНКА ==========
+// Индексы мешей (определяются порядком загрузки из OBJ):
+// mesh[0] = Cube (Станина - базовый элемент, не двигается)
+// mesh[1] = Cube.001 (Первая степень подвижности - вдоль станка)
+// mesh[2] = Cube.003 (Вторая степень подвижности - поперек под углом)
+// mesh[3] = Cylinder (Третья степень подвижности - вращение барабана)
+
+// Позиции для линейного движения
+float spindleAlongPosition = 0.0f;      // Первая степень - вдоль станка (ось X)
+float spindleAcrossPosition = 0.0f;     // Вторая степень - поперек станка (ось Z под углом)
+
+// Угол для вращения барабана
+float barrelRotation = 0.0f;            // Третья степень - вращение (ось Y)
+
+// Скорости движения
+const float moveSpeed = 2.0f;           // Скорость линейного движения
+const float rotateSpeed = 90.0f;        // Скорость вращения (градусы в секунду)
+
 // Прототипы callback-ов
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
@@ -97,13 +115,37 @@ int main() {
         shader.Use();
         shader.setMat4("projection", glm::value_ptr(projection));
         shader.setMat4("view", glm::value_ptr(view));
-        shader.setMat4("model", glm::value_ptr(model));
-
-        // Передаём позицию камеры для зеркальных бликов
         shader.setVec3("viewPos", cameraPosition.x, cameraPosition.y, cameraPosition.z);
 
-        // Отрисовка модели
-        ourModel.Draw(shader);
+        // ========== ОТРИСОВКА КАЖДОЙ ЧАСТИ СО СВОЕЙ ТРАНСФОРМАЦИЕЙ ==========
+        // Меш 0: Станина (базовый элемент) - не двигается
+        if (ourModel.meshes.size() > 0) {
+            glm::mat4 baseModel = glm::mat4(1.0f);
+            ourModel.meshes[0].DrawWithModel(shader, baseModel);
+        }
+
+        // Меш 1: Первая степень подвижности - линейное движение вдоль станка (ось X)
+        if (ourModel.meshes.size() > 1) {
+            glm::mat4 mesh1Model = glm::translate(glm::mat4(1.0f), glm::vec3(spindleAlongPosition, 0.0f, 0.0f));
+            ourModel.meshes[1].DrawWithModel(shader, mesh1Model);
+        }
+
+        // Меш 2: Вторая степень подвижности - линейное движение поперек под углом (ось Z с наклоном)
+        if (ourModel.meshes.size() > 2) {
+            // Движение поперек станка под углом 45 градусов в плоскости XZ
+            float angle = glm::radians(45.0f);
+            float acrossX = spindleAcrossPosition * sin(angle);
+            float acrossZ = spindleAcrossPosition * cos(angle);
+            glm::mat4 mesh2Model = glm::translate(glm::mat4(1.0f), glm::vec3(acrossX, 0.0f, acrossZ));
+            ourModel.meshes[2].DrawWithModel(shader, mesh2Model);
+        }
+
+        // Меш 3: Третья степень подвижности - вращение инструментального барабана (вокруг оси Y)
+        // Барабан двигается НЕЗАВИСИМО от других частей
+        if (ourModel.meshes.size() > 3) {
+            glm::mat4 mesh3Model = glm::rotate(glm::mat4(1.0f), glm::radians(barrelRotation), glm::vec3(0.0f, 1.0f, 0.0f));
+            ourModel.meshes[3].DrawWithModel(shader, mesh3Model);
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -143,9 +185,54 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
 void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
+    
+    // === УПРАВЛЕНИЕ КАМЕРОЙ (WASD + стрелки + мышь) ===
     float speed = 2.5f * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) cameraPosition += speed * cameraFront;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) cameraPosition -= speed * cameraFront;
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) cameraPosition -= glm::normalize(glm::cross(cameraFront, cameraUp)) * speed;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) cameraPosition += glm::normalize(glm::cross(cameraFront, cameraUp)) * speed;
+    
+    // Движение камеры стрелками (вперед/назад/влево/вправо относительно мира)
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) cameraPosition.z -= speed;
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) cameraPosition.z += speed;
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) cameraPosition.x -= speed;
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) cameraPosition.x += speed;
+    
+    // === УПРАВЛЕНИЕ ЧАСТЯМИ СТАНКА (НЕЗАВИСИМОЕ ДВИЖЕНИЕ) ===
+    
+    // Первая степень подвижности: линейное движение шпиндельной головы вдоль станка (ось X)
+    // Клавиши: Q / E
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+        spindleAlongPosition -= moveSpeed * deltaTime;
+        // Ограничение движения чтобы не "ломать" станок
+        if (spindleAlongPosition < -3.0f) spindleAlongPosition = -3.0f;
+    }
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+        spindleAlongPosition += moveSpeed * deltaTime;
+        if (spindleAlongPosition > 3.0f) spindleAlongPosition = 3.0f;
+    }
+    
+    // Вторая степень подвижности: линейное движение поперек станка под углом (ось Z под 45°)
+    // Клавиши: R / F
+    if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+        spindleAcrossPosition -= moveSpeed * deltaTime;
+        if (spindleAcrossPosition < -3.0f) spindleAcrossPosition = -3.0f;
+    }
+    if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
+        spindleAcrossPosition += moveSpeed * deltaTime;
+        if (spindleAcrossPosition > 3.0f) spindleAcrossPosition = 3.0f;
+    }
+    
+    // Третья степень подвижности: вращение инструментального барабана (вокруг оси Y)
+    // Барабан двигается НЕЗАВИСИМО от других частей
+    // Клавиши: T / G
+    if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
+        barrelRotation += rotateSpeed * deltaTime;
+        if (barrelRotation >= 360.0f) barrelRotation -= 360.0f;
+    }
+    if (glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS) {
+        barrelRotation -= rotateSpeed * deltaTime;
+        if (barrelRotation <= 0.0f) barrelRotation += 360.0f;
+    }
 }

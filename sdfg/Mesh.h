@@ -3,6 +3,7 @@
 
 #include <glm.hpp>
 #include "glm/gtc/matrix_transform.hpp"
+#include "glm/gtc/type_ptr.hpp"
 #include <GL/glew.h>
 #include <vector>
 #include <string>
@@ -28,6 +29,14 @@ public:
     }
 
     void Draw(Shader& shader) {
+        glBindVertexArray(VAO);
+        glDrawElements(GL_TRIANGLES, (GLsizei)indices.size(), GL_UNSIGNED_INT, 0);
+        glBindVertexArray(0);
+    }
+    
+    // Отрисовка с пользовательской матрицей модели
+    void DrawWithModel(Shader& shader, const glm::mat4& modelMatrix) {
+        shader.setMat4("model", glm::value_ptr(modelMatrix));
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, (GLsizei)indices.size(), GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
