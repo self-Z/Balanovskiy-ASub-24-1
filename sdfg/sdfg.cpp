@@ -125,12 +125,16 @@ int main() {
         }
 
         // Меш 1: Первая степень подвижности - линейное движение вдоль станка (ось X)
+        // Cube.001: начальная позиция X[0.948:1.869], двигаем вдоль X
+        // Ограничение: не даем уйти влево за пределы станины (X > -0.5)
         if (ourModel.meshes.size() > 1) {
             glm::mat4 mesh1Model = glm::translate(glm::mat4(1.0f), glm::vec3(spindleAlongPosition, 0.0f, 0.0f));
             ourModel.meshes[1].DrawWithModel(shader, mesh1Model);
         }
 
-        // Меш 2: Вторая степень подвижности - линейное движение поперек под углом (ось Z с наклоном)
+        // Меш 2: Вторая степень подвижности - линейное движение поперек под углом (ось Z с наклоном 45°)
+        // Cube.003: начальная позиция Y[2.754:3.969] (выше станины), двигаем в плоскости XZ под 45°
+        // Движение относительно начальной позиции меша
         if (ourModel.meshes.size() > 2) {
             // Движение поперек станка под углом 45 градусов в плоскости XZ
             float angle = glm::radians(45.0f);
@@ -140,10 +144,19 @@ int main() {
             ourModel.meshes[2].DrawWithModel(shader, mesh2Model);
         }
 
-        // Меш 3: Третья степень подвижности - вращение инструментального барабана (вокруг оси Y)
-        // Барабан двигается НЕЗАВИСИМО от других частей
+        // Меш 3: Третья степень подвижности - вращение инструментального барабана
+        // Cylinder: начальная позиция X[1.046:1.632] Y[2.140:2.608] Z[0.979:1.242]
+        // Центр барабана примерно: (1.339, 2.374, 1.110)
+        // Вращаем ВОКРУГ ЕГО СОБСТВЕННОЙ ОСИ Y (проходящей через его центр)
         if (ourModel.meshes.size() > 3) {
-            glm::mat4 mesh3Model = glm::rotate(glm::mat4(1.0f), glm::radians(barrelRotation), glm::vec3(0.0f, 1.0f, 0.0f));
+            // 1) Сместить барабан так, чтобы его центр оказался в начале координат
+            // 2) Повернуть вокруг оси Y
+            // 3) Вернуть обратно
+            glm::vec3 barrelCenter(1.339f, 2.374f, 1.110f);
+            glm::mat4 mesh3Model = 
+                glm::translate(glm::mat4(1.0f), barrelCenter) *
+                glm::rotate(glm::mat4(1.0f), glm::radians(barrelRotation), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                glm::translate(glm::mat4(1.0f), -barrelCenter);
             ourModel.meshes[3].DrawWithModel(shader, mesh3Model);
         }
 
@@ -202,31 +215,38 @@ void processInput(GLFWwindow* window) {
     // === УПРАВЛЕНИЕ ЧАСТЯМИ СТАНКА (НЕЗАВИСИМОЕ ДВИЖЕНИЕ) ===
     
     // Первая степень подвижности: линейное движение шпиндельной головы вдоль станка (ось X)
-    // Клавиши: Q / E
+    // Cube.001: начальная позиция X[0.948:1.869], Z[-2.829:-0.830]
+    // Станина (Cube): X[-1.176:1.867], Z[-2.144:1.937]
+    // Движение: Q (влево/назад), E (вправо/вперед) вдоль оси X
+    // Ограничение: не даем уйти влево за пределы станины (min X = -0.5) и вправо (max X = 1.0)
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
         spindleAlongPosition -= moveSpeed * deltaTime;
-        // Ограничение движения чтобы не "ломать" станок
-        if (spindleAlongPosition < -3.0f) spindleAlongPosition = -3.0f;
+        // Ограничение движения чтобы не \"ломать\" станок - не уходим влево за пределы
+        if (spindleAlongPosition < -0.5f) spindleAlongPosition = -0.5f;
     }
     if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
         spindleAlongPosition += moveSpeed * deltaTime;
-        if (spindleAlongPosition > 3.0f) spindleAlongPosition = 3.0f;
+        // Ограничение движения чтобы не \"ломать\" станок - не уходим вправо за пределы
+        if (spindleAlongPosition > 1.0f) spindleAlongPosition = 1.0f;
     }
     
     // Вторая степень подвижности: линейное движение поперек станка под углом (ось Z под 45°)
-    // Клавиши: R / F
+    // Cube.003: начальная позиция Y[2.754:3.969] (выше станины), двигаем в плоскости XZ под 45°
+    // Движение: R (назад/влево), F (вперед/вправо) под углом 45° в плоскости XZ
+    // Ограничение: не даем уйти слишком далеко (-1.5 до 1.5)
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         spindleAcrossPosition -= moveSpeed * deltaTime;
-        if (spindleAcrossPosition < -3.0f) spindleAcrossPosition = -3.0f;
+        if (spindleAcrossPosition < -1.5f) spindleAcrossPosition = -1.5f;
     }
     if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
         spindleAcrossPosition += moveSpeed * deltaTime;
-        if (spindleAcrossPosition > 3.0f) spindleAcrossPosition = 3.0f;
+        if (spindleAcrossPosition > 1.5f) spindleAcrossPosition = 1.5f;
     }
     
-    // Третья степень подвижности: вращение инструментального барабана (вокруг оси Y)
+    // Третья степень подвижности: вращение инструментального барабана (вокруг собственной оси Y)
+    // Cylinder: вращается независимо вокруг своей центральной оси Y
     // Барабан двигается НЕЗАВИСИМО от других частей
-    // Клавиши: T / G
+    // Клавиши: T (по часовой), G (против часовой)
     if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
         barrelRotation += rotateSpeed * deltaTime;
         if (barrelRotation >= 360.0f) barrelRotation -= 360.0f;
